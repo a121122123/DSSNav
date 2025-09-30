@@ -1,0 +1,7 @@
+<library path="libsocial_rule_layer">
+  <class name="social_rule_layer::SocialRuleLayer"
+         type="social_rule_layer::SocialRuleLayer"
+         base_class_type="costmap_2d::Layer">
+    <description>Social Rule Layer Plugin for Costmap2D.</description>
+  </class>
+</library>

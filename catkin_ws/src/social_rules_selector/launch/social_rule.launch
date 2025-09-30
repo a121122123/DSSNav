@@ -1,0 +1,71 @@
+<launch>
+  <arg name="model_path" default="$(find social_rules_selector)/models"/>
+  <arg name="svm_filename" default="$(arg model_path)/groups_probabilistic_small.model"/>
+  <arg name="max_distance" default="3.0"/>
+  <arg name="max_speed_difference" default="1.0"/>
+  <arg name="max_orientation_difference" default="0.78539816339"/>  <!-- pi/4 -->
+  <arg name="min_speed_to_consider_orientation" default="0.1"/>
+  <arg name="growth" default="0.1428571428"/>         <!-- 0.5 / 3.5 -->
+  <arg name="slow_decay" default="0.0125"/>           <!-- 0.5 / 40 -->
+  <arg name="fast_decay" default="0.1"/>              <!-- 0.5 / 5 -->
+  <arg name="lt_max_distance" default="4.0"/>
+
+  <node pkg="social_rules_selector" type="social_relation.py" name="social_relation_node" output="screen">
+    <param name="model_path" value="$(arg model_path)"/>
+    <param name="svm_filename" value="$(arg svm_filename)"/>
+
+    <param name="max_distance" value="$(arg max_distance)"/>
+    <param name="max_speed_difference" value="$(arg max_speed_difference)"/>
+    <param name="max_orientation_difference" value="$(arg max_orientation_difference)"/>
+    <param name="min_speed_to_consider_orientation" value="$(arg min_speed_to_consider_orientation)"/>
+
+    <param name="growth" value="$(arg growth)"/>
+    <param name="slow_decay" value="$(arg slow_decay)"/>
+    <param name="fast_decay" value="$(arg fast_decay)"/>
+    <param name="lt_max_distance" value="$(arg lt_max_distance)"/>
+
+  </node>
+
+  <arg name="relation_threshold" default="0.5"/>
+  <arg name="publish_single_person_groups" default="true"/>
+
+  <node pkg="social_rules_selector" type="tracked_groups.py" name="tracked_groups_node" output="screen" >
+    <param name="relation_threshold" value="$(arg relation_threshold)"/>
+    <param name="publish_single_person_groups" value="$(arg publish_single_person_groups)"/>
+  </node>
+
+  <arg name="input_topic" default="/tracked_groups"/>
+  <arg name="output_topic" default="/predicted_trajectory"/>
+  <arg name="predict_time" default="5.0"/>
+  <arg name="predict_dt" default="0.1"/>
+  
+  <node pkg="social_rules_selector" type="predict_trajectory_node.py" name="predict_trajectory_node" output="screen" >
+    <param name="input_topic" value="$(arg input_topic)"/>
+    <param name="output_topic" value="$(arg output_topic)"/>
+    <param name="predict_time" value="$(arg predict_time)"/>
+    <param name="predict_dt" value="$(arg predict_dt)"/>
+  </node>
+
+  <!-- Launch human_filter_node -->
+  <node pkg="social_rules_selector" type="human_filter.py" name="human_filter_node" output="screen" >
+  </node>
+
+  <!-- Launch social_rule_selector_node -->
+  <arg name="safe_dist" default="0.5"/>
+  <arg name="always_static" default="false"/>
+  <arg name="local_planner" default="teb"/>
+
+  <node pkg="social_rules_selector" type="social_rule_selector_node_test.py" name="social_rule_selector_node" output="screen" >
+    <param name="safe_dist" value="$(arg safe_dist)"/>
+    <param name="always_static" value="$(arg always_static)"/>
+    <param name="local_planner" value="$(arg local_planner)"/>
+  </node>
+
+  <!-- Launch dynamic obstacles node -->
+  <node pkg="social_rules_selector" type="publish_dynamic_obstacles.py" name="publish_dynamic_obstacles_node" output="screen">
+  </node>
+
+  <!-- Launch costmap clear node -->
+  <!-- <node pkg="social_rules_selector" type="clear_on_new_goal.py" name="clear_on_new_goal_node" output="screen">
+  </node> -->
+</launch>
