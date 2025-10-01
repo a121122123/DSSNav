@@ -25,6 +25,7 @@ docker run --gpus all -it --name test -v /tmp/.X11-unix:/tmp/.X11-unix:rw -v /tm
 	cd catkin_ws
 	apt update
 	rosdep install --from-paths src --ignore-src -r -y
+	catkin_make
 	source env_setup.sh
 	./start_simulation_hospital.sh [NUM_RUNS] [DEBUG_MODE] [USE_TEB] [ALWAYS_STATIC]
 	```
