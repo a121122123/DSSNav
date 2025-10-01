@@ -1,4 +1,4 @@
-image: /home/andre/ros_docker_ws/catkin_ws/map/map.pgm
+image: ./map.pgm
 resolution: 0.100000
 origin: [-50.000000, -51.000000, 0.000000]
 negate: 0

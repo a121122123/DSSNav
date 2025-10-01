@@ -40,6 +40,7 @@ echo "=============== 第 $i 次模擬 ==============="
     yolo_model:=yolov11n_combine.pt \
     debug:=$DEBUG_MODE \
     initial_pose_a:=3.14 \
+    map_file:=$(pwd)/map/map.yaml \
     use_teb:=$USE_TEB &
   PID_TRACKER=$!
   sleep 5
