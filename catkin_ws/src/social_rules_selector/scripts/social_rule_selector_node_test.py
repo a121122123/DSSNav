@@ -336,18 +336,21 @@ class SocialRuleSelector:
         vy = self.current_odom.twist.twist.linear.y
         v = math.hypot(vx, vy)
 
-        if not hasattr(self, '_speed_info_logged'):
-            self._speed_info_logged = False
+        if v < min_speed_threshold:
+            return False, None
 
-        if v < 0.1:
-            if not self._speed_info_logged:
-                rospy.logdebug("Robot speed too small, using fallback v=0.1")
-                self._speed_info_logged = True
-            v = 0.1
-        else:
-            if self._speed_info_logged:
-                rospy.logdebug("Robot speed is now greater than 0.1, stopping fallback v=0.1")
-                self._speed_info_logged = False
+        # if not hasattr(self, '_speed_info_logged'):
+        #     self._speed_info_logged = False
+
+        # if v < 0.1:
+        #     if not self._speed_info_logged:
+        #         rospy.logdebug("Robot speed too small, using fallback v=0.1")
+        #         self._speed_info_logged = True
+        #     v = 0.1
+        # else:
+        #     if self._speed_info_logged:
+        #         rospy.logdebug("Robot speed is now greater than 0.1, stopping fallback v=0.1")
+        #         self._speed_info_logged = False
 
         # 轉換起始點到 odom frame
         try:

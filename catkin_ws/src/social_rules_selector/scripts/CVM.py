@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import rospy
+import math
 import numpy as np
 from geometry_msgs.msg import PoseStamped, PoseWithCovariance, Twist
 # from PredictTraj.msg import PredictTraj
@@ -43,8 +44,12 @@ def predict_trajectory(tracked_groups, predict_time=1.0, dt=0.1):
         # 先取得初始位置與假設的常數速度，這裡用速度分量 linear.x 與 linear.y
         init_x = current_center.pose.position.x
         init_y = current_center.pose.position.y
-        v_x = current_twist.linear.x
-        v_y = current_twist.linear.y
+        if math.hypot(current_twist.linear.x, current_twist.linear.y) > 0.2:
+            v_x = current_twist.linear.x
+            v_y = current_twist.linear.y
+        else:
+            v_x = 0.0
+            v_y = 0.0
         
         # 根據常速線性外推，計算每個時間點的位置
         for step in range(1, num_steps + 1):

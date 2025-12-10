@@ -192,9 +192,11 @@ def trackGroups(groups, trk3dArray):
     # 建立由 tracked_id 至位置與速度的字典
     trackPositionsById = dict()
     trackVelocitiesById = dict()
+    trackClassById = dict()  ### 新增：記錄每個追蹤的 class_name
     for trk in trk3dArray.trks_list:
         trackPositionsById[trk.tracked_id] = numpy.array([trk.x, trk.y])
         trackVelocitiesById[trk.tracked_id] = numpy.array([trk.vx, trk.vy])
+        trackClassById[trk.tracked_id] = trk.class_name if trk.class_name else "person"
 
     # 對每一組，嘗試從歷史群組中找出相似的並延續群組 ID
     for clusterId, track_ids in sortedGroups:
@@ -236,6 +238,11 @@ def trackGroups(groups, trk3dArray):
             accumulatedPosition = numpy.array([0.0, 0.0])
             accumulatedVelocity = numpy.array([0.0, 0.0])
             activeTrackCount = 0
+
+            ### 新增部分：importance 累積
+            importance_map = {"staff": 1.5, "patient": 1.25, "person": 1.0}
+            total_importance = 0.0
+
             for tid in track_ids:
                 if tid in trackPositionsById:
                     accumulatedPosition += trackPositionsById[tid]
@@ -243,10 +250,16 @@ def trackGroups(groups, trk3dArray):
                         accumulatedVelocity += trackVelocitiesById[tid]
                     activeTrackCount += 1
 
+                ### 根據 class_name 累加重要性
+                cls = trackClassById.get(tid, "person")
+                total_importance += importance_map.get(cls, 1.0)
+
             # 計算群組平均位置
             centroid = accumulatedPosition / float(activeTrackCount)
             # 計算群組平均速度
             avgVelocity = accumulatedVelocity / float(activeTrackCount)
+            # 計算群組重要性
+            group_importance = total_importance / float(activeTrackCount)
 
             trackedGroup = TrackedGroup()
             trackedGroup.age = rospy.Duration(max(0, trk3dArray.header.stamp.to_sec() - groupExistsSince))
@@ -257,6 +270,8 @@ def trackGroups(groups, trk3dArray):
             trackedGroup.centerOfGravity.pose.position.y = centroid[1]
             trackedGroup.group_velocity.linear.x = avgVelocity[0]
             trackedGroup.group_velocity.linear.y = avgVelocity[1]
+
+            trackedGroup.importance = group_importance  ### 新增：設定群組重要性
 
             # For testing purposes, set a constant velocity
             # trackedGroup.group_velocity.linear.x = -1.0
@@ -274,7 +289,7 @@ def trackGroups(groups, trk3dArray):
                     person = next(trk for trk in trk3dArray.trks_list if trk.tracked_id == uid)
                     dist = numpy.linalg.norm(numpy.array([person.x, person.y]) - centroid)
                     max_dist = max(max_dist, dist + person.radius)
-                trackedGroup.group_radius = max(max_dist, 0.5)  # 確保半徑至少為0.5
+                trackedGroup.group_radius = min(max(max_dist, 0.2), len(track_ids) * 0.3)  # 確保半徑至少為0.2, 且不超過人數*0.3
 
             trackedGroups.append(trackedGroup)
 

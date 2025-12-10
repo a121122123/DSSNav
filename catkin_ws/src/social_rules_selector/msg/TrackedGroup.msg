@@ -11,4 +11,6 @@ geometry_msgs/Twist    group_velocity # mean of the group velocity (calculated f
 
 uint64[]    track_ids       # IDs of the tracked persons in this group. See srl_tracking_msgs/TrackedPersons
 
-float32    group_radius # radius of the group (calculated from its person tracks)
+float32    group_radius     # radius of the group (calculated from its person tracks)
+
+float32    importance       # importance of the group (calculated from its person tracks)
