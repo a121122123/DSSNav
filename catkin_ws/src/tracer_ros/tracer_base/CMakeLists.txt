@@ -32,7 +32,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES tracer_messenger
-# CATKIN_DEPENDS tracer_msgs roscpp sensor_msgs
+  CATKIN_DEPENDS tracer_msgs roscpp sensor_msgs
 #   DEPENDS Boost
 )
 
