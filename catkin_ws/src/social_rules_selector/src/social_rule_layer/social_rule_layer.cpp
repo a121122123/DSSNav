@@ -44,6 +44,7 @@ void SocialRuleLayer::updateBounds(double robot_x, double robot_y, double robot_
     transformed_group.group_velocity = group.group_velocity;
     transformed_group.group_radius = group.group_radius;
     transformed_group.track_ids = group.track_ids;
+    transformed_group.importance = group.importance; // 取得群組重要性
 
     // Transform the center of gravity to the global frame
     geometry_msgs::PointStamped group_point, transformed_point;
@@ -205,11 +206,11 @@ void SocialRuleLayer::updateCosts(costmap_2d::Costmap2D &master_grid,
         }
 
         double cost_value = Asymmetrical_Gaussian(world_x, world_y, group_x, group_y, group_velocity_x, group_velocity_y, 
-                                                  group.group_radius);
+                                                  group.group_radius, group.importance);
         if (current_rule_.rule != "normal")
         {
           double social_cost = ApplySocialRuleCost(world_x, world_y, group_x, group_y, group_velocity_x, group_velocity_y,
-                                                      group.group_radius);
+                                                      group.group_radius, group.importance);
 
           // double total_cost = min(cost_value + social_cost, 254.0);
           double total_cost = min((cost_value + social_cost) / 2, 254.0);
@@ -276,7 +277,7 @@ double SocialRuleLayer::ComputeSigma(double variance)
   return min(max(sigma, 0.2), 0.7); // Ensure sigma is within [0.2, 0.7]
 }
 
-double SocialRuleLayer::Asymmetrical_Gaussian(double x, double y, double x0, double y0, double vx, double vy, double group_radius) 
+double SocialRuleLayer::Asymmetrical_Gaussian(double x, double y, double x0, double y0, double vx, double vy, double group_radius, double importance) 
 {
   
 
@@ -294,7 +295,7 @@ double SocialRuleLayer::Asymmetrical_Gaussian(double x, double y, double x0, dou
   Eigen::Vector2d direction(vx, vy);
   double norm = direction.norm();
 
-  if (norm > 0.2) 
+  if (norm > 0.25) 
   {
     direction.normalize(); // Normalize the direction vector
     Eigen::Vector2d orthogonal(-direction.y(), direction.x()); // Get the orthogonal vector
@@ -304,10 +305,11 @@ double SocialRuleLayer::Asymmetrical_Gaussian(double x, double y, double x0, dou
     double v = delta_eff.dot(orthogonal); // Lateral projection
 
     // Calculate the cost using an asymmetrical Gaussian distribution
-    double sigma_front = 0.25 + norm * 0.4;
-    double sigma_back  = 0.2;
-    double sigma_right = 0.25;
-    double sigma_left  = 0.25;
+    double sigma_front = (0.2 + norm * 1.0) * importance;
+    double sigma_back  = 0.1 * importance;
+    double sigma_right = 0.2 * importance;
+    // double sigma_right = 0.3 * importance;
+    double sigma_left  = 0.2 * importance;
 
     double sigma_u = (u >= 0) ? sigma_front : sigma_back; // Use different sigma for forward/backward
     double sigma_v = (v >= 0) ? sigma_left : sigma_right; // Use different sigma for left/right
@@ -326,7 +328,7 @@ double SocialRuleLayer::Asymmetrical_Gaussian(double x, double y, double x0, dou
   else
   {
     // Velocity is too small, return a standard gaussian cost centered at (x0, y0)
-    double sigma = 0.25;//ComputeSigma(variance); // Standard deviation
+    double sigma = 0.2 * importance;//ComputeSigma(variance); // Standard deviation
     double d_eff = d - group_radius;
     double exponent = - (d_eff * d_eff) / (2 * sigma * sigma);
     double amplitude = 254.0; // Maximum cost value (leave some space for lethal cost)
@@ -336,16 +338,29 @@ double SocialRuleLayer::Asymmetrical_Gaussian(double x, double y, double x0, dou
   }
 }
 
-double SocialRuleLayer::ApplySocialRuleCost(double x, double y, double x0, double y0, double vx, double vy, double group_radius)
+double SocialRuleLayer::ApplySocialRuleCost(double x, double y, double x0, double y0, double vx, double vy, double group_radius, double importance)
 {
   if (current_rule_.rule == "normal") 
   {
-    ROS_INFO("[SocialRuleLayer] Social Rule \"normal\" in ApplySocialRuleCost. This should not happen!");
+    ROS_WARN("[SocialRuleLayer] Social Rule \"normal\" in ApplySocialRuleCost. This should not happen!");
   }
 
-  Eigen::Vector2d robot_ped_rel_pos(x0 - current_odom_.pose.pose.position.x, 
-                                    y0 - current_odom_.pose.pose.position.y);
+  Eigen::Vector2d robot_ped_rel_pos(current_odom_.pose.pose.position.x - x0, 
+                                    current_odom_.pose.pose.position.y - y0);
   Eigen::Vector2d robot_ped_orthogonal(-robot_ped_rel_pos.y(), robot_ped_rel_pos.x());
+
+  Eigen::Vector2d ped_direction(vx, vy);
+  double norm = ped_direction.norm();
+  if (norm > 0.25) 
+  {
+    ped_direction.normalize();
+    robot_ped_orthogonal = Eigen::Vector2d(-ped_direction.y(), ped_direction.x());
+  }
+  else 
+  {
+    ped_direction = robot_ped_rel_pos.normalized();
+    robot_ped_orthogonal = Eigen::Vector2d(-ped_direction.y(), ped_direction.x());
+  }
 
   // Get the orientation of the robot
   double robot_yaw = tf2::getYaw(current_odom_.pose.pose.orientation);
@@ -363,18 +378,27 @@ double SocialRuleLayer::ApplySocialRuleCost(double x, double y, double x0, doubl
   
   Eigen::Vector2d delta_eff = delta * ((d - group_radius) / d); // Effective delta considering group radius
 
-  double sigma_large = 0.3;
-  double sigma_small = 0.25;
+  double sigma_large = 0.4;
+  double sigma_small = 0.2;
+  double sigma_shrink = 0.1;
   double amplitude = 254.0;
   double social_cost = 0.0;
     
-  if (current_rule_.rule == "turn_left") 
+  if (current_rule_.rule == "normal")
+  {
+    double sigma = 0.2 * importance;//ComputeSigma(variance); // Standard deviation
+    double d_eff = d - group_radius;
+    double exponent = - (d_eff * d_eff) / (2 * sigma * sigma);
+    social_cost = amplitude * exp(exponent);
+    return max(min(social_cost, 254.0), 0.0);
+  }
+  else if (current_rule_.rule == "turn_left") 
   {
     double u = delta_eff.dot(robot_direction); // Forward projection
     double v = delta_eff.dot(normalized_direction); // Lateral projection
 
     double sigma_u = sigma_small;
-    double sigma_v = (v >= 0) ? sigma_small : sigma_large; // Wider on the right side
+    double sigma_v = (v >= 0) ? sigma_shrink : sigma_large; // Wider on the right side
     double exponent = - (u * u) / (2 * sigma_u * sigma_u) - (v * v) / (2 * sigma_v * sigma_v);
     social_cost = amplitude * exp(exponent);
   }
@@ -384,26 +408,26 @@ double SocialRuleLayer::ApplySocialRuleCost(double x, double y, double x0, doubl
     double v = delta_eff.dot(normalized_direction); // Lateral projection
 
     double sigma_u = sigma_small;
-    double sigma_v = (v >= 0) ? sigma_large : sigma_small; // Wider on the left side
+    double sigma_v = (v >= 0) ? sigma_large : sigma_shrink; // Wider on the left side
     double exponent = - (u * u) / (2 * sigma_u * sigma_u) - (v * v) / (2 * sigma_v * sigma_v);
     social_cost = amplitude * exp(exponent);
   }
   else if (current_rule_.rule == "accelerate") 
   {
-    double u = delta_eff.dot(robot_ped_rel_pos); // Forward projection
+    double u = delta_eff.dot(ped_direction); // Forward projection
     double v = delta_eff.dot(robot_ped_orthogonal); // Lateral projection
 
-    double sigma_u = (u >= 0) ? sigma_large : sigma_small; // Wider on the back side
+    double sigma_u = (u >= 0) ? sigma_shrink : sigma_large; // Wider on the back side
     double sigma_v = sigma_small;
     double exponent = - (u * u) / (2 * sigma_u * sigma_u) - (v * v) / (2 * sigma_v * sigma_v);
     social_cost = amplitude * exp(exponent);
   }
   else if (current_rule_.rule == "decelerate") 
   {
-    double u = delta_eff.dot(robot_ped_rel_pos); // Forward projection
+    double u = delta_eff.dot(ped_direction); // Forward projection
     double v = delta_eff.dot(robot_ped_orthogonal); // Lateral projection
 
-    double sigma_u = (u >= 0) ? sigma_small : sigma_large; // Wider on the front side
+    double sigma_u = (u >= 0) ? sigma_large : sigma_shrink; // Wider on the front side
     double sigma_v = sigma_small;
     double exponent = - (u * u) / (2 * sigma_u * sigma_u) - (v * v) / (2 * sigma_v * sigma_v);
     social_cost = amplitude * exp(exponent);

@@ -12,7 +12,7 @@ def trk3d_callback(msg):
         obs = ObstacleMsg()
         obs.id = trk.tracked_id
         obs.polygon.points.append(Point32(trk.x, trk.y, 0.0))  # 中心點
-        obs.radius = trk.radius if trk.radius > 0.0 else 0.3   # 半徑，避免 0
+        obs.radius = trk.radius if trk.radius > 0.0 else 0.2   # 半徑，避免 0
 
         # 設定速度
         obs.velocities.twist.linear.x = trk.vx

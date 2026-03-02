@@ -47,6 +47,7 @@ private:
     geometry_msgs::Twist group_velocity;
     double group_radius;
     std::vector<uint64_t> track_ids;
+    double importance;
   };
   
   void trackedGroupsCallback(const social_rules_selector::TrackedGroups::ConstPtr& msg);
@@ -54,8 +55,8 @@ private:
   void odomCallback(const nav_msgs::Odometry::ConstPtr& msg);
   double normalize(double angle);
   double ComputeSigma(double variance);
-  double Asymmetrical_Gaussian(double x, double y, double x0, double y0, double vx, double vy, double group_radius);
-  double ApplySocialRuleCost(double x, double y, double x0, double y0, double vx, double vy, double group_radius);
+  double Asymmetrical_Gaussian(double x, double y, double x0, double y0, double vx, double vy, double group_radius, double importance);
+  double ApplySocialRuleCost(double x, double y, double x0, double y0, double vx, double vy, double group_radius, double importance);
 
   ros::Subscriber tracked_groups_sub_;
   ros::Subscriber social_rule_sub_;

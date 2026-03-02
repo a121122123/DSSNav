@@ -24,6 +24,7 @@ import math
 import time
 import numpy as np
 from bisect import bisect_left
+from scipy.interpolate import splprep, splev
 import cv2
 import tf
 import tf2_ros
@@ -53,7 +54,7 @@ class SocialRuleSelector:
         # cost weights : [progress, similarity, proximity]
         self.weight_progress = rospy.get_param('~weight_progress', -1.0)
         self.weight_similarity = rospy.get_param('~weight_similarity', 1.0)
-        self.weight_proximity = rospy.get_param('~weight_proximity', 7.0)
+        self.weight_proximity = rospy.get_param('~weight_proximity', 10.0)
         rospy.loginfo(f"[SocialRuleSelector] Initialized weights: progress={self.weight_progress}, similarity={self.weight_similarity}, proximity={self.weight_proximity}")
 
         # Rule activation
@@ -106,7 +107,7 @@ class SocialRuleSelector:
         self.dist_field = None
         self.map_origin = (0.0, 0.0)
         self.map_info = None
-        self.last_rule = None
+        self.last_rule = 'normal'
         self.dist_field_saved = False
 
     # Callbacks
@@ -154,8 +155,8 @@ class SocialRuleSelector:
             raw_map_image[arr == -1] = 127  # Unknown cells as gray
             raw_map_image[arr == 0] = 255   # Free cells as white
             raw_map_image[arr > 50] = 0    # Occupied cells as black
-            cv2.imwrite('/home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/raw_map.png', raw_map_image)
-            rospy.loginfo("Raw map saved as /home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/raw_map.png")
+            # cv2.imwrite('/home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/raw_map.png', raw_map_image)
+            # rospy.loginfo("Raw map saved as /home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/raw_map.png")
             self.raw_map_saved = True
 
         occ = ((arr > 50) | (arr == -1)).astype(np.uint8)  # Occupied cells and unknown cells treat as obstacles
@@ -168,10 +169,10 @@ class SocialRuleSelector:
         # Save the distance field as an image only once
         if not self.dist_field_saved:
             dist_image = (self.dist_field / self.dist_field.max() * 255).astype(np.uint8)  # Normalize to 0-255
-            cv2.imwrite('/home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/distance_field.png', dist_image)  # Save the image
-            rospy.loginfo("Distance field saved as /tmp/distance_field.png")
-            cv2.imwrite('/home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/src_binary.png', src * 255)
-            rospy.loginfo("Binary map saved as /home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/src_binary.png")
+            # cv2.imwrite('/home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/distance_field.png', dist_image)  # Save the image
+            # rospy.loginfo("Distance field saved as /tmp/distance_field.png")
+            # cv2.imwrite('/home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/src_binary.png', src * 255)
+            # rospy.loginfo("Binary map saved as /home/andre/ros_docker_ws/catkin_ws/src/social_rules_selector/src_binary.png")
             self.dist_field_saved = True
 
     # Dynamic Reconfigure callback
@@ -181,6 +182,7 @@ class SocialRuleSelector:
     def run(self):
         rate = rospy.Rate(self.rate)
         while not rospy.is_shutdown():
+            # rospy.loginfo(f"[SocialRuleSelector] Running main loop time: {rospy.get_time():.2f}")
             missing = []
             if self.person_trajs is None:
                 missing.append('predict_trajs')
@@ -199,6 +201,10 @@ class SocialRuleSelector:
 
             if self.always_static:
                 best = "normal"
+                # best = "decelerate"
+                # best = "accelerate"
+                # best = "turn_left"
+                # best = "turn_right"
                 trajs = {}
             else:
                 # 1. checkCollision
@@ -225,9 +231,14 @@ class SocialRuleSelector:
                     best_raw = "normal"
                     trajs = {}
 
-                # 6. update activation
-                self.rule_activation[best_raw] = min(self.rule_activation_max,
+                # 6. update activation                
+                if(self.last_rule == 'normal' and best_raw != 'normal'):
+                    self.rule_activation[best_raw] = self.rule_activation_max
+                    self.rule_activation['normal'] = self.rule_activation_min
+                else:
+                    self.rule_activation[best_raw] = min(self.rule_activation_max,
                                                     self.rule_activation[best_raw] + self.activation_increase)
+
                 for rule in self.rule_activation:
                     if rule != best_raw:
                         self.rule_activation[rule] = max(self.rule_activation_min,
@@ -402,6 +413,14 @@ class SocialRuleSelector:
             pvx = traj.predicted_velocity.linear.x
             pvy = traj.predicted_velocity.linear.y
 
+            # Get the group importance (if available)
+            group_importance = 1.0  # Default importance
+            if self.groups_state and self.groups_state.groups:
+                for group in self.groups_state.groups:
+                    if group.group_id == traj.group_id:
+                        group_importance = group.importance
+                        break
+
             for person_traj_point in traj.predicted_trajectory:
                 px = person_traj_point.pose.position.x
                 py = person_traj_point.pose.position.y
@@ -410,7 +429,7 @@ class SocialRuleSelector:
                 for accum_time_odom, x_odom, y_odom in timed_path_odom:
                     dx = px - x_odom
                     dy = py - y_odom
-                    importance = 1.0  # TODO: 可根據 group importance 調整
+                    importance = group_importance  # Use the group importance value
                     if math.hypot(dx, dy) < self.safe_dist * importance + v / self.a_max:
                         # rospy.loginfo("Collision detected!")
                         # rospy.loginfo(f"Robot Position: ({ox}, {oy}), Velocity: ({vx}, {vy})")
@@ -421,7 +440,7 @@ class SocialRuleSelector:
 
         return False, None
 
-    def sampleTrajectories(self, collisions, sample_resolution = 0.5):
+    def sampleTrajectories(self, collisions, sample_resolution = 0.25):
         rospy.logdebug(f"[SocialRuleSelector] Sampling trajectories")
         trajs = {
             "decelerate": [],
@@ -437,16 +456,38 @@ class SocialRuleSelector:
         if (len(path_pts) < 2):
             rospy.logwarn(f"[SocialRuleSelector] Global path too short for trajectory sampling")
             return trajs
+        
+        # 在計算 cumulative_s 之前
+        if len(path_pts) > 3:
+            x = [p[0] for p in path_pts]
+            y = [p[1] for p in path_pts]
+            # s=0 決定平滑程度，越大越平滑但偏離原始點越多
+            tck, u = splprep([x, y], s=1.0) 
+            new_u = np.linspace(0, 1, num=len(path_pts) * 2)
+            new_x, new_y = splev(new_u, tck)
+            path_pts = list(zip(new_x, new_y))
+
+        # 計算初始航向角（使用前兩點的切線方向）
         theta0 = np.arctan2(path_pts[1][1] - path_pts[0][1], path_pts[1][0] - path_pts[0][0])
+        # 將 Quaternion 轉為 Yaw
+        # orientation_q = self.current_odom.pose.pose.orientation
+        # quaternion = (orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w)
+        # _, _, theta0 = tf.transformations.euler_from_quaternion(quaternion)
+
+        # Compute cumulative arc length along the path
         cumulative_s = np.zeros(len(path_pts))
         for i in range(1, len(path_pts)):
             cumulative_s[i] = cumulative_s[i-1] + np.linalg.norm(np.array(path_pts[i]) - np.array(path_pts[i-1]))
 
         types = {
-            "decelerate": {"s":(0.5, 2.0), "d":(-0.5, 0.5)}, #decelerate, num = 4 * 3 = 12
-            "accelerate": {"s":(2.0, 4.0), "d":(-0.5, 0.5)}, #accelerate, num = 5 * 3 = 15
-            "turn_right": {"s":(1.0, 3.0), "d":(-2.0, -0.5)}, #turn_right, num = 5 * 4 = 20
-            "turn_left": {"s":(1.0, 3.0), "d":(0.5, 2.0)}, #turn_left, num = 5 * 4 = 20
+            "decelerate": {"s":(0.5, 2.0), "d":(-0.25, 0.25)}, #decelerate, num = 7 * 3 = 21
+            "accelerate": {"s":(3.75, 5.0), "d":(-0.25, 0.25)}, #accelerate, num = 6 * 3 = 18
+            "turn_right": {"s":(2.25, 3.5), "d":(-1.5, -0.5)}, #turn_right, num = 6 * 5 = 30
+            "turn_left" : {"s":(2.25, 3.5), "d":(0.5, 1.5)}, #turn_left, num = 6 * 5 = 30
+            # "decelerate": {"s":(0.5, 2.0), "d":(-0.25, 0.25)}, #decelerate, num = 7 * 3 = 21
+            # "accelerate": {"s":(2.0, 4.0), "d":(-0.25, 0.25)}, #accelerate, num = 9 * 3 = 27
+            # "turn_right": {"s":(1.0, 3.0), "d":(-1.5, -0.5)}, #turn_right, num = 9 * 5 = 45
+            # "turn_left": {"s":(1.0, 3.0), "d":(0.5, 1.5)}, #turn_left, num = 9 * 5 = 45
         }
 
         for t_name, t in types.items():
@@ -454,6 +495,13 @@ class SocialRuleSelector:
             endpoints_frenet = []
             s_range = t["s"]
             d_range = t["d"]
+
+            # Check if s_range is valid
+            if s_range[0] > cumulative_s[-1]:
+                rospy.logdebug(f"[SocialRuleSelector] s_range {s_range} is out of global path length {cumulative_s[-1]:.2f}, skipping type {t_name}")
+                continue
+            
+            # Endpoint sampling in Frenet coordinates
             for s in np.arange(s_range[0], s_range[1], sample_resolution):
                 for d in np.arange(d_range[0], d_range[1], sample_resolution):
                     endpoints_frenet.append((s, d))
@@ -467,6 +515,7 @@ class SocialRuleSelector:
 
                 # Interpolate to get the global point
                 ratio = (s - cumulative_s[idx]) / (cumulative_s[idx + 1] - cumulative_s[idx] + 1e-6)
+                ratio = np.clip(ratio, 0.0, 1.0) # Ensure ratio is within [0, 1]
                 x = path_pts[idx][0] + ratio * (path_pts[idx + 1][0] - path_pts[idx][0])
                 y = path_pts[idx][1] + ratio * (path_pts[idx + 1][1] - path_pts[idx][1])
 
@@ -615,7 +664,7 @@ class SocialRuleSelector:
                     for (pred_traj, group_r) in self.predicted_groups:
                         if i < len(pred_traj):
                             gx, gy = pred_traj[i]
-                            dist = np.hypot(x - gx, y - gy)
+                            dist = np.hypot(x - gx, y - gy) - group_r
                             if dist < min_dist:
                                 min_dist = dist
                     if i == 0:
@@ -624,6 +673,8 @@ class SocialRuleSelector:
                         if min_dist < c_proximity:
                             c_proximity = min_dist
                 c_proximity = np.exp(-c_proximity)
+
+                # rospy.loginfo(f"Trajectory type: {t_name}, progress cost: {c_progress:.2f}, proximity cost: {c_proximity:.4f}")
 
                 cost = (self.weight_progress * c_progress +
                          self.weight_similarity * c_similarity +
@@ -664,8 +715,8 @@ class SocialRuleSelector:
         color_map = {
             "decelerate": (1.0, 0.0, 0.0), # Red
             "accelerate": (0.0, 1.0, 0.0), # Green
-            "turn_right": (1.0, 1.0, 0.0),   # Yellow
-            "turn_left": (0.0, 0.0, 1.0),    # Blue
+            "turn_right": (0.6, 0.0, 0.8), # Purple
+            "turn_left" : (1.0, 1.0, 0.0), # Yellow
         }
 
         for t_name, traj_list in trajs.items():
@@ -684,7 +735,7 @@ class SocialRuleSelector:
                 marker.color.r = r
                 marker.color.g = g
                 marker.color.b = b
-                marker.lifetime = rospy.Duration(5)  # 持續時間
+                marker.lifetime = rospy.Duration(1 / self.rate)  # 持續時間
 
                 for point in traj:
                     p = Point()
