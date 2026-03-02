@@ -15,3 +15,10 @@ float32 score
 # int8 class_id
 string class_name
 int32 tracked_id
+
+# The 2D bounding box center in image coordinates
+geometry_msgs/Pose2D bbox2d_center
+
+# The size of the 2D bounding box in pixels
+float32 bbox2d_size_x
+float32 bbox2d_size_y

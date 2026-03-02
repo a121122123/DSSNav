@@ -26,7 +26,7 @@
   <arg name="min_cluster_size" default="1"/>
   <arg name="max_cluster_size" default="10000"/>
 
-  <node name="my_tracker_node" pkg="ultralytics_ros" type="my_tracker_node.py" output="screen">
+  <node name="my_tracker_node" pkg="ultralytics_ros" type="tracker_wo_yolo.py" output="screen">
     <param name="yolo_model" value="$(arg yolo_model)"/>
     <param name="input_topic" value="$(arg input_topic)"/>
     <param name="result_topic" value="$(arg result_topic)"/>
@@ -59,7 +59,7 @@
   <node name="yolo_3d_transform_node" pkg="ultralytics_ros" type="trans_frame_node.py" output="screen"/>
   
   <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
-  <arg name="map_file" default="/home/andre/ros_docker_ws/catkin_ws/map/map.yaml"/>
+  <arg name="map_file" default="/workspace/catkin_ws/map/map.yaml"/>
   <!-- <arg name="map_file" default="/home/andre/ros_docker_ws/catkin_ws/map/test.yaml"/> -->
   <arg name="open_rviz" default="true"/>
   <arg name="move_forward_only" default="false"/>

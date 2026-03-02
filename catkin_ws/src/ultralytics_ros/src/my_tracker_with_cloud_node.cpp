@@ -180,9 +180,9 @@ TrackerWithCloudNode::euclideanClusterExtraction(const pcl::PointCloud<pcl::Poin
   std::vector<pcl::PointIndices> cluster_indices;
   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
 
-  ec.setClusterTolerance(cluster_tolerance_);
-  ec.setMinClusterSize(min_cluster_size_);
-  ec.setMaxClusterSize(max_cluster_size_);
+  ec.setClusterTolerance(cluster_tolerance_); // 0.75
+  ec.setMinClusterSize(min_cluster_size_);    // 1
+  ec.setMaxClusterSize(max_cluster_size_);    // 10000
   ec.setSearchMethod(tree);
   ec.setInputCloud(cloud);
   ec.extract(cluster_indices);
@@ -213,7 +213,17 @@ TrackerWithCloudNode::euclideanClusterExtraction(const pcl::PointCloud<pcl::Poin
     }
   }
 
-  return closest_cluster;
+  // return closest_cluster;
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cluster(new pcl::PointCloud<pcl::PointXYZ>);
+
+  pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
+  outrem.setInputCloud(closest_cluster);
+  outrem.setRadiusSearch(0.2);        // 半徑（公尺）
+  outrem.setMinNeighborsInRadius(2);  // 至少要有幾個鄰居
+  outrem.filter(*filtered_cluster);
+
+  return filtered_cluster;
 }
 
 void TrackerWithCloudNode::createBoundingBox(
@@ -274,6 +284,9 @@ void TrackerWithCloudNode::createBoundingBox(
   detection3d.tracked_id = detection.id;
   // detection3d.class_id = detection.class_id;
   detection3d.class_name = detection.class_name;
+  detection3d.bbox2d_center = detection.center;
+  detection3d.bbox2d_size_x = detection.size_x;
+  detection3d.bbox2d_size_y = detection.size_y;
 
   detections3d_msg.detections.push_back(detection3d);
 }
